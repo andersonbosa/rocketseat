@@ -1,0 +1,63 @@
+version: '3.4'
+
+##############################################################################
+# DISCLAIMER 😎
+#
+# The credentials exposed here were generated for testing and destroyed. 
+# Vulnerabilities issues identified here must be disregarded if "exposed secrets" category.
+##############################################################################
+# TOFIX: hot reloading isnt work
+# TODO: setup configuration to debug in VSCode
+
+volumes:
+  node_modules: {}
+
+networks:
+  spacetime-private-net:
+
+services:
+  ##
+  # MAIN APPLICATIONS
+  ##
+  server_fastify:
+    build:
+      context: ./services/server-fastify
+      dockerfile: Dockerfile
+      args:
+        FASTIFY_SERVER_PORT: 3333
+    # environment:
+      # NODE_OPTIONS: "--inspect=0.0.0.0:9229"
+    networks:
+      - spacetime-private-net
+    ports:
+      - "3333:3333"
+    hostname: server_fastify
+    volumes:
+      - ./services/server-fastify:/server
+      - /server/node_modules
+      # - node_modules:/server/node_modules
+
+  app_web:
+    depends_on:
+      - server_fastify
+    build:
+      context: ./services/app-web
+      dockerfile: Dockerfile
+      args:
+        NEXTJS_PORT: 3000
+    environment:
+      PORT: 3000
+      FASTIFY_SERVER_PORT: 3333
+    networks:
+      - spacetime-private-net
+    ports:
+      - "3000:3000"
+    hostname: app_web
+    volumes:
+      - ./services/app-web:/app
+      # - /app/node_modules
+      # - node_modules:/app/node_modules
+  #   tmpfs:
+  #     - /app/.next
+
+

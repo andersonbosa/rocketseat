@@ -1,0 +1,7 @@
+@RocketseatAuction.API_HostAddress = http://localhost:5123
+
+# GET {{RocketseatAuction.API_HostAddress}}/api/v1/Auction/
+GET {{@RocketseatAuction.API_HostAddress}}/api/v1/Auction/
+Accept: text/plain
+
+###

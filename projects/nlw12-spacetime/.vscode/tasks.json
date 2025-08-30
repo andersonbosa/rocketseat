@@ -1,0 +1,47 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "app-web: docker-build",
+			"type": "docker-build",
+			"platform": "node",
+			"dockerBuild": {
+				"dockerfile": "${workspaceFolder}/services/app-web/Dockerfile",
+				"context": "${workspaceFolder}/services/app-web",
+				"pull": true
+			},
+			"node": {
+				"package": "${workspaceFolder}/services/app-web/package.json"
+			}
+		},
+		{
+			"label": "app-web: docker-run: release",
+			"type": "docker-run",
+			"dependsOn": [
+				"docker-build"
+			],
+			"platform": "node",
+			"node": {
+				"package": "${workspaceFolder}/services/app-web/package.json"
+			}
+		},
+		{
+			"label": "app-web: docker-run: debug",
+			"type": "docker-run",
+			"dependsOn": [
+				"docker-build"
+			],
+			"dockerRun": {
+				"command": "",
+				"env": {
+					"DEBUG": "*",
+					"NODE_ENV": "development"
+				}
+			},
+			"node": {
+				"package": "${workspaceFolder}/services/app-web/package.json",
+				"enableDebugging": true
+			}
+		}
+	]
+}

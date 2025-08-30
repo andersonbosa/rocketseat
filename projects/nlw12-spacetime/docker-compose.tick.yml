@@ -1,0 +1,204 @@
+version: '3.4'
+
+##############################################################################
+# DISCLAIMER 😎
+#
+# The credentials exposed here were generated for testing and destroyed. 
+# Vulnerabilities issues identified here must be disregarded if "exposed secrets" category.
+##############################################################################
+
+
+volumes:
+  node_modules: {}
+  prometheus: {}
+  grafana: {}
+
+networks:
+  spacetime-private-net:
+  tick-stack:
+
+
+services:
+  ##
+  # MAIN APPLICATIONS
+  ##
+
+  server_fastify:
+    build:
+      context: ./services/server-fastify
+      dockerfile: Dockerfile
+    environment:
+      FASTIFY_SERVER_PORT: 3333
+      # NODE_OPTIONS: "--inspect=0.0.0.0:9229"
+    networks:
+      - spacetime-private-net
+    ports:
+      - "3333:3333"
+    volumes:
+      - ./services/server-fastify:/server
+      # - node_modules:/server/node_modules
+      # - /server/node_modules
+    hostname: server_fastify
+
+  app_web:
+    depends_on:
+      - server_fastify
+    build:
+      context: ./services/app-web
+      dockerfile: Dockerfile
+      args:
+        - NEXTJS_PORT=3000
+    environment:
+      PORT: 3000
+      FASTIFY_SERVER_PORT: 3333
+    networks:
+      - spacetime-private-net
+    ports:
+      - "3000:3000"
+    hostname: app_web
+  #   volumes:
+  #     - ./services/app-web:/app
+  #     - /app/node_modules
+  #     # - node_modules:/app/node_modules
+  #   tmpfs:
+  #     - /app/.next
+
+
+  ##
+  # OBSERVABILITY
+  ##
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./services/prometheus:/etc/prometheus
+      - prometheus:/prometheus/
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: unless-stopped
+    hostname: prometheus
+    networks:
+      - spacetime-private-net
+      - tick-stack
+
+  grafana:
+    depends_on:
+      - prometheus
+      - influxdb
+    image: grafana/grafana
+    ports:
+      - "9091:9091"
+    env_file: ./services/tick/.env
+    # environment:
+    # GF_AUTH_BASIC_ENABLED: false
+    # GF_SECURITY_ADMIN_USER: admin
+    # GF_SECURITY_ADMIN_PASSWORD: password
+    # GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    # GF_AUTH_ANONYMOUS_ENABLED: true
+    # GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - ./services/grafana:/etc/grafana/provisioning
+      - grafana:/var/lib/grafana
+    restart: unless-stopped
+    hostname: grafana
+    networks:
+      - tick-stack
+      - spacetime-private-net
+
+
+  ##
+  # TICK STACK
+  ##
+  telegraf:
+    depends_on:
+      - influxdb
+    image: telegraf:alpine
+    user: telegraf:999 # 999: docker group UID
+    env_file: ./services/tick/.env
+    links:
+      - influxdb
+    volumes:
+      # Mount for telegraf configuration
+      - ./services/tick/telegraf/:/etc/telegraf/
+      # Mount for Docker API access
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    # hostname: telegraf
+    # networks:
+    #   - tick-stack
+    # - spacetime-private-net
+
+  influxdb:
+    image: "influxdb:alpine"
+    volumes:
+      # Mount for influxdb data directory
+      - ./services/tick/influxdb/data:/var/lib/influxdb
+      - ./services/tick/influxdb/data:/var/lib/influxdb2
+      # Mount for influxdb configuration
+      - ./services/tick/influxdb/config/:/etc/influxdb/
+    ports:
+      # The API for InfluxDB is served on port 8086
+      - "8086:8086"
+      - "8082:8082"
+      # UDP Port
+      - "8089:8089/udp"
+    restart: unless-stopped
+    hostname: influxdb
+    env_file: ./services/tick/.env
+    # environment:
+    # DOCKER_INFLUXDB_INIT_MODE: setup
+    # DOCKER_INFLUXDB_INIT_USERNAME: root
+    # DOCKER_INFLUXDB_INIT_PASSWORD: toor
+    # DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: "ycCuKyyzkBA7PK5fLMN-EXwZXVwO7nW05JFN8ylWu2sHijkSYtcFymczgZGwRXTjrODK8q-7TX8oFw-TUPqbWg=="
+    # DOCKER_INFLUXDB_INIT_ORG: "t4inha"
+    # DOCKER_INFLUXDB_INIT_BUCKET: "bucket-name"
+    # INFLUXDB_DATA_ENGINE: tsm1
+    # INFLUXDB_REPORTING_DISABLED: false
+    # networks:
+    #   - tick-stack
+    # - spacetime-private-net
+
+  kapacitor:
+    image: kapacitor:alpine
+    volumes:
+      # Mount for kapacitor data directory
+      - ./services/tick/kapacitor/data/:/var/lib/kapacitor
+      # Mount for kapacitor configuration
+      - ./services/tick/kapacitor/config/:/etc/kapacitor/
+    # Kapacitor requires network access to Influxdb
+    links:
+      - influxdb
+    ports:
+      # The API for Kapacitor is served on port 9092
+      - "9092:9092"
+    restart: unless-stopped
+    hostname: kapacitor
+    # networks:
+    #   - tick-stack
+    # - spacetime-private-net
+
+  chronograf:
+    image: chronograf:alpine
+    env_file: ./services/tick/.env
+    environment:
+      RESOURCES_PATH: "/usr/share/chronograf/resources"
+    volumes:
+      # Mount for chronograf database
+      - ./services/tick/chronograf/data/:/var/lib/chronograf/
+    links:
+      # Chronograf requires network access to InfluxDB and Kapacitor
+      - influxdb
+      - kapacitor
+    ports:
+      # The WebUI for Chronograf is served on port 8888
+      - "8888:8888"
+    depends_on:
+      - kapacitor
+      - influxdb
+      - telegraf
+    restart: unless-stopped
+    hostname: chronograf
+    # networks:
+    #   - tick-stack
+    # - spacetime-private-net
